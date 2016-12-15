@@ -1,0 +1,13 @@
+---
+# defaults file for PeterMosmans.wordpress
+www_group: www-data
+wordpress_remove:
+  - readme.html
+  - license.txt
+  - wp-config-sample.php
+  - wp-content/plugins/hello.php
+  - wp-content/themes/twentyeleven
+  - wp-content/themes/twentyfifteen
+  - wp-content/themes/twentyfourteen
+  - wp-content/themes/twentythirteen
+  - wp-content/themes/twentytwelve

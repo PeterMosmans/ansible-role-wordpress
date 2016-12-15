@@ -1,0 +1,128 @@
+---
+# tasks file for PeterMosmans.wordpress
+
+- name: Install php5 MYSQL
+  apt:
+    name=php5-mysql
+    state=present
+
+- name: Download latest version of WordPress
+  get_url:
+    url=https://wordpress.org/latest.tar.gz
+    dest=/tmp/wordpress-latest.tar.gz
+    force=yes
+  tags:
+    - update
+
+- name: Create directory
+  file:
+    path={{ item.src }}
+    state=directory
+    owner=root
+    group={{ www_group }}
+    mode=550
+  with_items: "{{ wordpress_sites }}"
+
+- name: Extract archive
+#  unarchive: src=/tmp/wordpress-{{ wp_version }}.tar.gz dest=/var/www/{{ wp_target }} owner={{ www_user }} group={{ www_group }} copy=no
+  command: tar -zxvf /tmp/wordpress-latest.tar.gz -C {{ item.src }} --strip-components 1  --overwrite --overwrite-dir
+  with_items: "{{ wordpress_sites }}"
+  tags:
+    - update
+
+- name: Fetch random salts for wp-config.php
+  local_action: command curl https://api.wordpress.org/secret-key/1.1/salt/
+  register: "wp_salt"
+
+- name: Deploy WordPress config file
+  template:
+    src=wp-config.php.j2
+    dest={{ item.src }}/wp-config.php
+    owner=root
+    group={{ www_group }}
+    mode=640
+  with_items: "{{ wordpress_sites }}"
+
+- name: Download latest version of plugins
+  get_url:
+    url=https://downloads.wordpress.org/plugin/{{ item[1] }}.zip
+    dest=/tmp/{{ item[1] }}.zip
+    force=yes
+  with_subelements:
+    - "{{ wordpress_sites }}"
+    - plugins
+  tags:
+    - update
+    - plugins
+
+#- name: remove plugins before installing new versions
+#  file: path=/var/www/{{ item[0].name }}/wp-content/plugins/{{ item[1] }}
+#    state=absent
+#  with_subelements:
+#    - "{{ wp_sites }}"
+#    - plugins
+#    mode=640
+
+- name: Install plugins
+  unarchive:
+    src=/tmp/{{ item[1] }}.zip
+    dest={{ item[0].src }}/wp-content/plugins/
+    owner=root
+    group={{ www_group }}
+    copy=no
+    creates=yes
+  with_subelements:
+    - "{{ wordpress_sites }}"
+    - plugins
+  tags:
+    - update
+    - plugins
+
+- name: Create database
+  mysql_db:
+    name={{ item.db_name }}
+    state=present
+  with_items: "{{ wordpress_sites }}"
+
+- name: Create WordPress database user
+  mysql_user:
+    name={{ item.db_name }}
+    password={{ item.db_password }}
+    priv={{ item.db_user }}.*:ALL
+    host='localhost'
+    state=present
+  with_items: "{{ wordpress_sites }}"
+
+- name: Set ownership of files
+  command: chown -cR root:{{ www_group }} {{ item.src }}
+  with_items: "{{ wordpress_sites }}"
+  tags:
+    - recovery
+    - update
+
+- name: Set permissions for directories
+  command: find {{ item.src }} -type d -exec chmod 750 {} \;
+  with_items: "{{ wordpress_sites }}"
+  tags:
+    - recovery
+    - update
+    - plugins
+
+- name: Set permissions for files
+  command: find {{ item.src }} -type f -exec chmod 640 {} \;
+  with_items: "{{ wordpress_sites }}"
+  tags:
+    - recovery
+    - update
+    - plugins
+
+- name: Remove default files and directories
+  file:
+    path={{ item[0].src }}/{{ item[1] }}
+    state=absent
+  with_nested:
+    - "{{ wordpress_sites }}"
+    - "{{ wordpress_remove }}"
+  tags:
+    - harden
+    - update
